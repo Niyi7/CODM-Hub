@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b0f14">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<title>CODM Hub</title>
+<style>
+:root{--bg:#0b0f14;--card:#141a22;--line:#222c38;--txt:#e8eef5;--mut:#8a99ab;--acc:#ff9f1c;color-scheme:dark}
+*{box-sizing:border-box;margin:0}
+body{background:var(--bg);color:var(--txt);font:15px/1.4 system-ui,sans-serif;padding-bottom:env(safe-area-inset-bottom)}
+header{position:sticky;top:0;z-index:5;background:rgba(11,15,20,.95);backdrop-filter:blur(8px);padding:calc(10px + env(safe-area-inset-top)) 14px 8px;border-bottom:1px solid var(--line)}
+.row{display:flex;gap:8px;align-items:center}
+h1{font-size:18px;flex:1;letter-spacing:.5px}h1 b{color:var(--acc)}
+button,select,input{font:inherit;color:var(--txt);background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px 12px}
+button{cursor:pointer}button.on,.chip.on{background:var(--acc);color:#111;border-color:var(--acc);font-weight:600}
+.search{margin-top:8px}.search input{flex:1;min-width:0}
+.chips{display:flex;gap:6px;overflow-x:auto;margin-top:8px;padding-bottom:4px;scrollbar-width:none}
+.chip{white-space:nowrap;border-radius:99px;padding:5px 12px;font-size:13px}
+.filters{margin-top:6px}.filters select{flex:1;font-size:13px;padding:6px}
+main{padding:12px 14px;display:grid;gap:14px;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));max-width:1200px;margin:auto}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.thumb{position:relative;aspect-ratio:16/9;background:#000;cursor:pointer}
+.thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.dur{position:absolute;right:6px;bottom:6px;background:rgba(0,0,0,.8);padding:1px 6px;border-radius:5px;font-size:12px}
+.info{padding:10px 12px;display:flex;gap:8px}
+.info div{flex:1;min-width:0}
+.t{font-weight:600;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.m{color:var(--mut);font-size:13px;margin-top:4px}
+.heart{background:none;border:0;font-size:20px;padding:0 4px;color:var(--mut)}.heart.on{color:#ff4d6d;background:none}
+.msg{grid-column:1/-1;text-align:center;color:var(--mut);padding:40px 10px}
+.msg.err{color:#ff7b7b}
+.more{grid-column:1/-1;justify-self:center;margin:6px 0 24px}
+dialog{background:var(--card);color:var(--txt);border:1px solid var(--line);border-radius:14px;padding:16px;width:min(92vw,520px)}
+dialog::backdrop{background:rgba(0,0,0,.7)}
+dialog input{width:100%;margin:10px 0}
+#player{width:min(96vw,900px);padding:0;overflow:hidden}
+#player iframe{width:100%;aspect-ratio:16/9;border:0;display:block}
+#player .bar{display:flex;gap:8px;padding:10px;justify-content:space-between}
+a{color:var(--acc)}small{color:var(--mut)}
+</style>
+</head>
+<body>
+<header>
+  <div class="row">
+    <h1><b>CODM</b> Hub</h1>
+    <button id="install" hidden>Install</button>
+    <button id="tabFeed" class="on">Feed</button>
+    <button id="tabSaved">♥ Saved</button>
+    <button id="gear" aria-label="Settings">⚙</button>
+  </div>
+  <form class="row search" id="sf"><input id="q" type="search" placeholder="Search CODM videos…"><button>Go</button></form>
+  <div class="chips" id="chips"></div>
+  <div class="row filters">
+    <select id="order"><option value="date">Newest</option><option value="viewCount">Most viewed</option><option value="relevance">Relevant</option></select>
+    <select id="range"><option value="1">Past 24h</option><option value="7" selected>Past week</option><option value="30">Past month</option><option value="365">Past year</option><option value="0">Any time</option></select>
+  </div>
+</header>
+<main id="grid"></main>
+
+<dialog id="settings">
+  <h3>YouTube API key</h3>
+  <small>Free. Get one at Google Cloud Console → enable <b>YouTube Data API v3</b> → Credentials → API key. Stored only on this device.</small>
+  <input id="key" placeholder="AIza…" autocomplete="off">
+  <div class="row"><button id="saveKey" class="on">Save</button><button id="closeSet">Close</button><button id="clearCache">Clear cache</button></div>
+</dialog>
+
+<dialog id="player"><div id="pv"></div><div class="bar"><a id="yt" target="_blank" rel="noopener">Open on YouTube</a><button id="closeP">Close</button></div></dialog>
+
+<script>
+const CATS=[["Latest",""],["Loadouts","loadout"],["Gunsmith","gunsmith best build"],["Tips & Tricks","tips tricks"],["Ranked","ranked"],["BR","battle royale"],["MP","multiplayer"],["Season Update","new season update"],["Leaks","leaks"],["Montage","montage"],["Funny","funny moments"]];
+const $=id=>document.getElementById(id), LS=localStorage;
+const S={cat:0,tab:"feed",token:null,q:"",items:[]};
+const favs=()=>JSON.parse(LS.favs||"{}"), setFavs=f=>LS.favs=JSON.stringify(f);
+const key=()=>LS.ytkey||"";
+
+CATS.forEach((c,i)=>{const b=document.createElement("button");b.className="chip"+(i?"":" on");b.textContent=c[0];b.onclick=()=>{S.cat=i;S.q="";$("q").value="";[...$("chips").children].forEach((x,j)=>x.classList.toggle("on",i==j));go()};$("chips").append(b)});
+$("sf").onsubmit=e=>{e.preventDefault();S.q=$("q").value.trim();go()};
+$("order").onchange=$("range").onchange=()=>go();
+$("tabFeed").onclick=()=>{S.tab="feed";tabs();go()};
+$("tabSaved").onclick=()=>{S.tab="saved";tabs();renderSaved()};
+function tabs(){$("tabFeed").classList.toggle("on",S.tab=="feed");$("tabSaved").classList.toggle("on",S.tab=="saved")}
+
+const fmtN=n=>n>=1e6?(n/1e6).toFixed(1)+"M":n>=1e3?(n/1e3).toFixed(1)+"K":n;
+const dur=d=>{const m=/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/.exec(d||"")||[];const h=+m[1]||0,mi=+m[2]||0,s=+m[3]||0;const p=x=>String(x).padStart(2,"0");return h?`${h}:${p(mi)}:${p(s)}`:`${mi}:${p(s)}`};
+const ago=t=>{const s=(Date.now()-new Date(t))/1000;for(const[u,n]of[["y",31536e3],["mo",2592e3],["d",86400],["h",3600],["m",60]])if(s>=n)return Math.floor(s/n)+u+" ago";return "just now"};
+const esc=s=>s.replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+function card(v){const f=favs()[v.id];const d=document.createElement("div");d.className="card";
+d.innerHTML=`<div class="thumb"><img loading="lazy" src="${v.thumb}" alt=""><span class="dur">${v.dur}</span></div>
+<div class="info"><div><div class="t">${esc(v.title)}</div><div class="m">${esc(v.channel)} · ${v.views!=null?fmtN(v.views)+" views · ":""}${ago(v.date)}</div></div><button class="heart ${f?"on":""}">${f?"♥":"♡"}</button></div>`;
+d.querySelector(".thumb").onclick=()=>play(v.id);
+const h=d.querySelector(".heart");h.onclick=()=>{const F=favs();if(F[v.id])delete F[v.id];else F[v.id]=v;setFavs(F);h.classList.toggle("on",!!F[v.id]);h.textContent=F[v.id]?"♥":"♡";if(S.tab=="saved")renderSaved()};
+return d}
+function play(id){$("pv").innerHTML=`<iframe src="https://www.youtube-nocookie.com/embed/${id}?autoplay=1&rel=0" allow="autoplay;encrypted-media;picture-in-picture" allowfullscreen></iframe>`;$("yt").href="https://www.youtube.com/watch?v="+id;$("player").showModal()}
+$("closeP").onclick=()=>$("player").close();$("player").addEventListener("close",()=>$("pv").innerHTML="");
+
+function msg(t,err){const m=document.createElement("div");m.className="msg"+(err?" err":"");m.textContent=t;return m}
+function renderSaved(){const g=$("grid");g.innerHTML="";const a=Object.values(favs());if(!a.length)return g.append(msg("No saved videos yet. Tap ♡ on any video."));a.forEach(v=>g.append(card(v)))}
+
+async function api(path,params){
+  params.key=key();const url="https://www.googleapis.com/youtube/v3/"+path+"?"+new URLSearchParams(params);
+  const r=await fetch(url);const j=await r.json();
+  if(!r.ok)throw new Error(j.error?.errors?.[0]?.reason=="quotaExceeded"?"Daily API quota used up. Try again tomorrow (resets midnight Pacific).":(j.error?.message||"Request failed"));
+  return j}
+
+async function load(more){
+  const base='CODM|"Call of Duty Mobile"';const extra=S.q||CATS[S.cat][1];
+  const p={part:"snippet",type:"video",maxResults:12,order:$("order").value,q:(base+" "+extra).trim(),relevanceLanguage:"en",safeSearch:"none"};
+  const days=+$("range").value;if(days)p.publishedAfter=new Date(Date.now()-days*864e5).toISOString();
+  if(more&&S.token)p.pageToken=S.token;
+  const ck="c:"+JSON.stringify(p);const hit=LS[ck]&&JSON.parse(LS[ck]);
+  if(hit&&Date.now()-hit.t<18e5)return hit.d;
+  const s=await api("search",p);
+  const ids=s.items.map(i=>i.id.videoId).join(",");
+  let stats={};if(ids){const d=await api("videos",{part:"contentDetails,statistics",id:ids});d.items.forEach(x=>stats[x.id]=x)}
+  const items=s.items.map(i=>{const x=stats[i.id.videoId]||{};return{id:i.id.videoId,title:i.snippet.title,channel:i.snippet.channelTitle,date:i.snippet.publishedAt,thumb:(i.snippet.thumbnails.medium||i.snippet.thumbnails.default).url,dur:dur(x.contentDetails?.duration),views:x.statistics?+x.statistics.viewCount:null}});
+  const out={items,next:s.nextPageToken||null};
+  try{LS[ck]=JSON.stringify({t:Date.now(),d:out})}catch(e){pruneCache()}
+  return out}
+function pruneCache(){Object.keys(LS).filter(k=>k.startsWith("c:")).forEach(k=>LS.removeItem(k))}
+
+let busy=false;
+async function go(more){
+  if(S.tab!="feed"||busy)return;const g=$("grid");
+  if(!key()){g.innerHTML="";g.append(msg("Add your free YouTube API key (⚙) to start."));return $("settings").showModal()}
+  busy=true;if(!more){g.innerHTML="";g.append(msg("Loading…"))}
+  try{const r=await load(more);if(!more)g.innerHTML="";g.querySelector(".more")?.remove();S.token=r.next;
+    if(!r.items.length&&!more)g.append(msg("Nothing found. Try a wider time range."));
+    r.items.forEach(v=>g.append(card(v)));
+    if(r.next){const b=document.createElement("button");b.className="more";b.textContent="Load more";b.onclick=()=>go(true);g.append(b)}
+  }catch(e){if(!more)g.innerHTML="";g.append(msg(navigator.onLine?e.message:"You're offline. Saved videos still work.",1))}
+  busy=false}
+
+$("gear").onclick=()=>{$("key").value=key();$("settings").showModal()};
+$("closeSet").onclick=()=>$("settings").close();
+$("saveKey").onclick=()=>{LS.ytkey=$("key").value.trim();$("settings").close();go()};
+$("clearCache").onclick=()=>{pruneCache();$("settings").close();go()};
+
+let dp;addEventListener("beforeinstallprompt",e=>{e.preventDefault();dp=e;$("install").hidden=false});
+$("install").onclick=async()=>{if(!dp)return;dp.prompt();await dp.userChoice;dp=null;$("install").hidden=true};
+if("serviceWorker"in navigator)addEventListener("load",()=>navigator.serviceWorker.register("sw.js"));
+go();
+</script>
+</body>
+</html>
